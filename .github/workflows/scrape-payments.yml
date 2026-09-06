@@ -1,0 +1,21 @@
+name: janiela-summary
+on:
+  schedule:
+    - cron: '20 23 * * *'
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements-actions.txt
+      - run: playwright install chromium
+      - run: python scrape-and-send.py
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          JANIELA_PIN: ${{ secrets.JANIELA_PIN }}
