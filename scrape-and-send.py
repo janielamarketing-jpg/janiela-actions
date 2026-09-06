@@ -75,8 +75,8 @@ async def send():
         import json as _json, urllib.request as _url
         with _url.urlopen("https://janiela.vercel.app/partner-konnect.json", timeout=20) as _r:
             _j = _json.loads(_r.read().decode())
-        total_open = f"
-Total Open: ₱{float(_j.get('totalOpen') or 0):,.2f}"
+        amt = float(_j.get('totalOpen') or 0)
+        total_open = "\nTotal Open: ₱" + f"{amt:,.2f}"
     except Exception as _e:
         print(f"total fetch: {_e}")
     cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')}{total_open}"
