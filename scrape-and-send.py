@@ -70,7 +70,16 @@ async def send():
     bot = Bot(token=token, request=req)
     with open(path,"rb") as f: data=f.read()
     bio = io.BytesIO(data); bio.name="summary.png"
-    cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')} (auto daily 7:20AM/7:30PM)"
+    total_open = ""
+    try:
+        import json as _json, urllib.request as _url
+        with _url.urlopen("https://janiela.vercel.app/partner-konnect.json", timeout=20) as _r:
+            _j = _json.loads(_r.read().decode())
+        total_open = f"
+Total Open: ₱{float(_j.get('totalOpen') or 0):,.2f}"
+    except Exception as _e:
+        print(f"total fetch: {_e}")
+    cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')}{total_open}"
     await bot.send_photo(chat_id=int(chat_id), photo=bio, caption=cap)
     print(f"sent {len(data)} bytes")
     os.remove(path)
