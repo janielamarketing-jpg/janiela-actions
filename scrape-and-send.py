@@ -42,7 +42,7 @@ async def capture_tight():
         print(f"box={box}")
         if box and box['w']>0:
             await pg.evaluate(f"window.scrollTo(0,{box['scrollY']+box['y']-100})")
-            await asyncio.sleep(800)
+            await asyncio.sleep(0.8)
             box2 = await pg.evaluate('''() => {
                 const t='SUMMARY BREAKDOWN BY DATE';
                 const all=[...document.querySelectorAll('*')];
@@ -70,7 +70,7 @@ async def send():
     bot = Bot(token=token, request=req)
     with open(path,"rb") as f: data=f.read()
     bio = io.BytesIO(data); bio.name="summary.png"
-    cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')} (auto Mon-Sat 7:20AM/7:30PM)"
+    cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')} (auto daily 7:20AM/7:30PM)"
     await bot.send_photo(chat_id=int(chat_id), photo=bio, caption=cap)
     print(f"sent {len(data)} bytes")
     os.remove(path)
