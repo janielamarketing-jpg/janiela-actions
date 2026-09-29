@@ -28,8 +28,25 @@ async def capture_tight():
                     else: await pg.keyboard.press("Enter")
                     try: await pg.wait_for_function("() => document.body.innerText.includes('SUMMARY BREAKDOWN')", timeout=8000)
                     except: await asyncio.sleep(3)
+                # Refresh to avoid stale cached total, then wait for fresh data
+                try:
+                    btn = await pg.query_selector('button:has-text("Refresh Now")')
+                    if btn:
+                        await btn.click()
+                        await asyncio.sleep(6)
+                        try: await pg.wait_for_function("() => document.body.innerText.includes('SUMMARY BREAKDOWN')", timeout=8000)
+                        except: await asyncio.sleep(2)
+                except: pass
         except Exception as e:
             print(f"PIN step: {e}")
+        try:
+            total_txt = await pg.evaluate("() => document.body.innerText")
+            import re as _re
+            m = _re.search(r"TOTAL OPEN[^\d₱P]*[₱P]?\s*([\d,]+\.\d{2})", total_txt)
+            total_amt = m.group(1) if m else ""
+        except:
+            total_amt = ""
+        print(f"total={total_amt}")
         box = await pg.evaluate('''() => {
             const t='SUMMARY BREAKDOWN BY DATE';
             const all=[...document.querySelectorAll('*')];
@@ -55,34 +72,67 @@ async def capture_tight():
         else:
             await pg.screenshot(path=tmp, full_page=True)
         await b.close()
-    return tmp
+    return tmp, total_amt
 
-async def send():
-    path = await capture_tight()
+# Retry schedule in seconds before each attempt. The first is 0 so a healthy
+# run is not delayed. Generous because this job is unattended - a missed day is
+# a day with no summary at all.
+SEND_RETRY_DELAYS = (0, 15, 30, 60, 120)
+
+
+async def send_photo_with_retry(bot, chat_id, data, cap):
     import io
     from datetime import datetime
     import pytz
+    last = "not attempted"
+    for i, delay in enumerate(SEND_RETRY_DELAYS, 1):
+        if delay:
+            stamp = datetime.now(pytz.timezone("Asia/Manila")).strftime("%H:%M:%S")
+            print(f"[{stamp}] upload retry {i}/{len(SEND_RETRY_DELAYS)} in {delay}s (last: {last})")
+            await asyncio.sleep(delay)
+        try:
+            bio = io.BytesIO(data)
+            bio.name = "summary.png"
+            await bot.send_photo(chat_id=chat_id, photo=bio, caption=cap)
+            return True
+        except Exception as e:
+            last = f"{type(e).__name__}: {e}"
+            print(f"upload attempt {i}/{len(SEND_RETRY_DELAYS)} failed: {last}")
+    return False
+
+
+async def send():
+    path, total_amt = await capture_tight()
+    if not total_amt:
+        # A capture that produced no total is a failed run, not a run with an
+        # empty field. Exiting non-zero makes the Actions run red so the
+        # failure is visible instead of arriving as a bare screenshot.
+        print("FATAL: no TOTAL OPEN found - the capture did not reach the summary card")
+        if os.path.exists(path):
+            os.remove(path)
+        raise SystemExit(2)
+
     from telegram.request import HTTPXRequest
     from telegram import Bot
     token = os.environ["BOT_TOKEN"]
     chat_id = os.environ["CHAT_ID"]
-    req = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
+    req = HTTPXRequest(connect_timeout=30.0, read_timeout=90.0, write_timeout=90.0)
     bot = Bot(token=token, request=req)
-    with open(path,"rb") as f: data=f.read()
-    bio = io.BytesIO(data); bio.name="summary.png"
-    total_open = ""
-    try:
-        import json as _json, urllib.request as _url
-        with _url.urlopen("https://janiela.vercel.app/partner-konnect.json", timeout=20) as _r:
-            _j = _json.loads(_r.read().decode())
-        amt = float(_j.get('totalOpen') or 0)
-        total_open = "\nTotal Open: ₱" + f"{amt:,.2f}"
-    except Exception as _e:
-        print(f"total fetch: {_e}")
-    cap = f"📊 Summary Breakdown — {datetime.now(pytz.timezone('Asia/Manila')).strftime('%a %b %d %I:%M %p')}{total_open}"
-    await bot.send_photo(chat_id=int(chat_id), photo=bio, caption=cap)
-    print(f"sent {len(data)} bytes")
+    with open(path, "rb") as f:
+        data = f.read()
+    stamp = __import__("datetime").datetime.now(
+        __import__("pytz").timezone("Asia/Manila")
+    ).strftime("%a %b %d, %I:%M %p")
+    cap = f"📊 Total Open: ₱{total_amt}\n🕒 {stamp} PH • Janiela Partner Konnect"
+
+    ok = await send_photo_with_retry(bot, int(chat_id), data, cap)
+    if ok:
+        print(f"SENT {len(data)} bytes total={total_amt}")
+    else:
+        print("FATAL: upload failed after every retry")
     os.remove(path)
+    if not ok:
+        raise SystemExit(3)
 
 import asyncio
 asyncio.run(send())
