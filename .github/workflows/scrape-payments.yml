@@ -1,8 +1,11 @@
 name: janiela-summary
 on:
   schedule:
-    - cron: '20 23 * * *'
-    - cron: '30 11 * * *'
+    # 23:20 UTC = 07:20 Manila (next day). Day-of-week 1-6 = Mon-Sat, matching
+    # the local bot; the old '* * *' ran Sundays too.
+    - cron: '20 23 * * 1-6'
+    # 11:30 UTC = 19:30 Manila.
+    - cron: '30 11 * * 1-6'
   workflow_dispatch:
 jobs:
   send:
