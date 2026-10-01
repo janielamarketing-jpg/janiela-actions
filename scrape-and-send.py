@@ -101,7 +101,60 @@ async def send_photo_with_retry(bot, chat_id, data, cap):
     return False
 
 
+
+# --- time guard -------------------------------------------------------------
+# GitHub's cron is best-effort, not punctual. This repo's runs have landed hours
+# off their schedule, so a run outside the intended Manila window must not send:
+# a summary at 1 AM is worse than no summary. The window is generous because a
+# legitimately-late run should still deliver.
+#
+# Exits 0 (green) when out of window - a skip is the correct outcome, not a
+# failure, and a red run here would cry wolf on every drift.
+import sys
+from datetime import datetime, timedelta, timezone
+
+MANILA = timezone(timedelta(hours=8))
+
+# (slot name, intended minute-of-day, earliest allowed, latest allowed)
+WINDOWS = [
+    ("morning", 7 * 60 + 20, 6 * 60 + 50, 9 * 60),
+    ("evening", 19 * 60 + 30, 19 * 60, 21 * 60 + 30),
+]
+
+
+def within_window(now_local):
+    """Return the slot this run belongs to, or None if it is out of window."""
+    minutes = now_local.hour * 60 + now_local.minute
+    for name, intended, lo, hi in WINDOWS:
+        if lo <= minutes <= hi:
+            return name, intended
+    return None
+
+
+def guard_or_skip():
+    now_local = datetime.now(MANILA)
+    hit = within_window(now_local)
+    stamp = now_local.strftime("%a %b %d, %I:%M:%S %p")
+    if hit:
+        name, intended = hit
+        hh, mm = divmod(intended, 60)
+        log(f"in-window: {name} slot (intended {hh:02d}:{mm:02d} Manila)")
+        return True
+    lo = min(w[2] for w in WINDOWS)
+    hi = max(w[3] for w in WINDOWS)
+    log(f"OUT OF WINDOW at {stamp} Manila - skipping, no message sent")
+    log(f"valid windows are {lo // 60:02d}:{lo % 60:02d}-09:00 and 19:00-21:30 Manila")
+    return False
+
+
+def log(msg):
+    print(f"[{datetime.now(MANILA):%H:%M:%S}] {msg}", flush=True)
+
+
 async def send():
+    # Refuse to message the user outside the intended Manila hours.
+    if not guard_or_skip():
+        raise SystemExit(0)
     path, total_amt = await capture_tight()
     if not total_amt:
         # A capture that produced no total is a failed run, not a run with an
